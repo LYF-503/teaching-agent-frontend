@@ -345,15 +345,16 @@ function ChatPanel() {
         </div>
 
       {/* 输入区域（整合上传、语音、发送） */}
-      <div className="input-card" style={{ 
-            background: '#ffffff', 
-            borderRadius: 18,
-            border: '1px solid #e8e8e8',
-            overflow: 'hidden',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)'
-       }}>
+     <div className="input-card" style={{ 
+  background: '#ffffff', 
+  borderRadius: 18,
+  border: '1px solid #e8e8e8',
+  overflow: 'hidden',
+  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)',
+  opacity: loading ? 0.7 : 1,
+  transition: 'opacity 0.2s ease'
+}}>
      
-        {/* 文件标签 */}
         {/* 文件标签 */}
 {fileList.length > 0 && (
   <div style={{ 
@@ -361,6 +362,8 @@ function ChatPanel() {
     display: 'flex',
     flexWrap: 'wrap',
     gap: 6,
+    cursor: loading ? 'wait' : 'default'  // 加这一行
+    
   }}>
     {fileList.map(file => (
       <Popover
@@ -515,21 +518,24 @@ function ChatPanel() {
 
         {/* 输入框 */}
         <Input.TextArea 
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="输入你的教学思路...（Enter 发送，Shift+Enter 换行）" 
-          style={{ 
-  border: 'none',
-  boxShadow: 'none',
-  resize: 'none',
-  padding: '12px',
-  fontSize: 14,
-  background: 'transparent'
-}}
-          autoSize={{ minRows: 2, maxRows: 4 }}
-          disabled={loading}
-        />
+  value={inputValue}
+  onChange={(e) => setInputValue(e.target.value)}
+  onKeyDown={handleKeyDown}
+  placeholder={loading ? "智能体正在思考，请稍候..." : "输入你的教学思路...（Enter 发送，Shift+Enter 换行）"} 
+  style={{ 
+    border: 'none',
+    boxShadow: 'none',
+    resize: 'none',
+    padding: '12px',
+    fontSize: 14,
+    background: 'transparent',
+    cursor: loading ? 'wait' : 'text',
+    opacity: loading ? 0.8 : 1,
+    transition: 'all 0.2s ease'
+  }}
+  autoSize={{ minRows: 2, maxRows: 4 }}
+  disabled={loading}
+/>
 
         {/* 底部工具栏 */}
         {/* 底部工具栏 */}
@@ -537,7 +543,8 @@ function ChatPanel() {
   display: 'flex', 
   alignItems: 'center', 
   justifyContent: 'space-between',
-  padding: '8px 12px 12px 12px'
+  padding: '8px 12px 12px 12px',
+  cursor: loading ? 'wait' : 'default'  // 加这一行
 }}>
   <div style={{ display: 'flex', gap: 8 }}>
     {/* 文件上传按钮 */}
@@ -556,39 +563,45 @@ function ChatPanel() {
     </div>
   }
 >
-  <Upload
-    customRequest={customRequest}
-    onRemove={handleRemove}
-    fileList={fileList}
-    accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4"
-    showUploadList={false}
-    multiple
-  >
-    <div
-      onClick={() => setUploadTooltipOpen(false)}
-      style={{
-        width: 32,
-        height: 32,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 8,
-        cursor: 'pointer',
-        color: '#6B8EAE',
-        transition: 'all 0.2s ease'
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = '#E9F0F7';
-        e.currentTarget.style.color = '#4A637A';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent';
-        e.currentTarget.style.color = '#6B8EAE';
-      }}
+  <div style={{ pointerEvents: loading ? 'none' : 'auto' }}>
+    <Upload
+      customRequest={customRequest}
+      onRemove={handleRemove}
+      fileList={fileList}
+      accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4"
+      showUploadList={false}
+      multiple
     >
-      <UploadOutlined style={{ fontSize: 18 }} />
-    </div>
-  </Upload>
+      <div
+        onClick={() => setUploadTooltipOpen(false)}
+        style={{
+          width: 32,
+          height: 32,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 8,
+          cursor: loading ? 'wait' : 'pointer',
+          color: '#6B8EAE',
+          transition: 'all 0.2s ease'
+        }}
+        onMouseEnter={(e) => {
+          if (!loading) {
+            e.currentTarget.style.background = '#E9F0F7';
+            e.currentTarget.style.color = '#4A637A';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!loading) {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = '#6B8EAE';
+          }
+        }}
+      >
+        <UploadOutlined style={{ fontSize: 18 }} />
+      </div>
+    </Upload>
+  </div>
 </Tooltip>
     {/* 语音按钮 - 通过样式覆盖让它和上传按钮一致 */}
     <Tooltip
@@ -609,7 +622,6 @@ function ChatPanel() {
       justifyContent: 'center',
       borderRadius: 8,
       cursor: loading ? 'not-allowed' : 'pointer',
-      opacity: loading ? 0.4 : 1,
       transition: 'all 0.2s ease',
       color: '#6B8EAE',
       pointerEvents: loading ? 'none' : 'auto'
@@ -648,7 +660,7 @@ function ChatPanel() {
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: 8,
-      background: loading ? '#A8B8C8' : '#6B8EAE',
+      background: '#6B8EAE',
       cursor: loading || inputValue.trim() === '' ? 'not-allowed' : 'pointer',
       opacity: inputValue.trim() === '' ? 0.5 : 1,
       transition: 'all 0.2s ease',
