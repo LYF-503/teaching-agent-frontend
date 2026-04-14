@@ -5,6 +5,7 @@ import type { UploadFile } from 'antd/es/upload/interface';
 import { createSession, sendMessage } from '../../api/dialogue';
 import { uploadFile, mockUploadFile } from '../../api/upload';
 import { triggerGenerate, getGenerateStatus, mockGenerate, mockGetGenerateStatus } from '../../api/generate';
+import { usePreviewStore } from '../../store/previewStore';
 import { USE_MOCK } from '../../config';
 import VoiceInput from '../VoiceInput';
 import IntentCard from '../IntentCard';
@@ -40,6 +41,8 @@ function ChatPanel() {
   const [tempNote, setTempNote] = useState<string>('');
   const [uploadTooltipOpen, setUploadTooltipOpen] = useState(false);
   const [voiceTooltipOpen, setVoiceTooltipOpen] = useState(false);
+  const { setGenerating: setGlobalGenerating, setProgress, setPreview } = usePreviewStore();
+ 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -162,6 +165,8 @@ function ChatPanel() {
     setGenerating(true);
     setGenerateProgress(0);
     setGenerateStatus('正在启动生成...');
+    setGlobalGenerating(true);        // 👈 加这行
+    setProgress(0, '正在启动生成...'); // 👈 加这行
 
     try {
       let taskId: string;
@@ -169,7 +174,7 @@ function ChatPanel() {
         const result = await mockGenerate(sessionId);
         taskId = result.task_id;
       } else {
-        const result = await triggerGenerate(sessionId, { ppt: true, word: true, game: false });
+        const result = await triggerGenerate(sessionId, { ppt: true, word: true, game: true });
         taskId = result.task_id;
       }
 
@@ -186,6 +191,7 @@ function ChatPanel() {
           }
 
           setGenerateProgress(statusResult.progress);
+          setProgress(statusResult.progress, `正在生成课件... ${statusResult.progress}%`); // 👈 加这行
 
           if (statusResult.status === 'processing') {
             setGenerateStatus(`正在生成课件... ${statusResult.progress}%`);
@@ -193,9 +199,15 @@ function ChatPanel() {
             clearInterval(pollInterval);
             setGenerateStatus('生成完成！');
             setGenerating(false);
+            setGlobalGenerating(false);  // 👈 加这行
             if (statusResult.preview) {
               antMessage.success('课件生成成功！');
-              console.log('预览地址:', statusResult.preview);
+              setPreview(
+              statusResult.preview.ppt_url || null,
+              statusResult.preview.word_url || null,
+              statusResult.preview.game_url || null
+  );  // 👈 加这三行
+              
             }
             Modal.success({
               title: '课件生成成功',
@@ -204,6 +216,7 @@ function ChatPanel() {
           } else if (statusResult.status === 'failed') {
             clearInterval(pollInterval);
             setGenerating(false);
+            setGlobalGenerating(false);  // 👈 加这行
             setGenerateStatus('生成失败');
             antMessage.error('课件生成失败，请重试');
           }
@@ -351,7 +364,7 @@ function ChatPanel() {
   border: '1px solid #e8e8e8',
   overflow: 'hidden',
   boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)',
-  opacity: loading ? 0.7 : 1,
+  opacity: (loading || generating) ? 0.6 : 1,
   transition: 'opacity 0.2s ease'
 }}>
      
@@ -362,7 +375,7 @@ function ChatPanel() {
     display: 'flex',
     flexWrap: 'wrap',
     gap: 6,
-    cursor: loading ? 'wait' : 'default'  // 加这一行
+    cursor: (loading || generating) ? 'wait' : 'default'  // 加这一行
     
   }}>
     {fileList.map(file => (
@@ -521,7 +534,7 @@ function ChatPanel() {
   value={inputValue}
   onChange={(e) => setInputValue(e.target.value)}
   onKeyDown={handleKeyDown}
-  placeholder={loading ? "智能体正在思考，请稍候..." : "输入你的教学思路...（Enter 发送，Shift+Enter 换行）"} 
+  placeholder={(loading || generating) ? "智能体正在思考，请稍候..." : "输入你的教学思路...（Enter 发送，Shift+Enter 换行）"} 
   style={{ 
     border: 'none',
     boxShadow: 'none',
@@ -529,12 +542,12 @@ function ChatPanel() {
     padding: '12px',
     fontSize: 14,
     background: 'transparent',
-    cursor: loading ? 'wait' : 'text',
-    opacity: loading ? 0.8 : 1,
+    cursor: (loading || generating) ? 'wait' : 'text',
+    opacity: (loading || generating) ? 0.8 : 1,
     transition: 'all 0.2s ease'
   }}
   autoSize={{ minRows: 2, maxRows: 4 }}
-  disabled={loading}
+  disabled={loading || generating}
 />
 
         {/* 底部工具栏 */}
@@ -544,7 +557,7 @@ function ChatPanel() {
   alignItems: 'center', 
   justifyContent: 'space-between',
   padding: '8px 12px 12px 12px',
-  cursor: loading ? 'wait' : 'default'  // 加这一行
+  cursor: (loading || generating) ? 'wait' : 'default'  // 加这一行
 }}>
   <div style={{ display: 'flex', gap: 8 }}>
     {/* 文件上传按钮 */}
@@ -563,7 +576,7 @@ function ChatPanel() {
     </div>
   }
 >
-  <div style={{ pointerEvents: loading ? 'none' : 'auto' }}>
+  <div style={{ pointerEvents: (loading || generating) ? 'none' : 'auto' }}>
     <Upload
       customRequest={customRequest}
       onRemove={handleRemove}
@@ -581,7 +594,7 @@ function ChatPanel() {
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: 8,
-          cursor: loading ? 'wait' : 'pointer',
+          cursor: (loading || generating) ? 'wait' : 'pointer',
           color: '#6B8EAE',
           transition: 'all 0.2s ease'
         }}
@@ -621,10 +634,10 @@ function ChatPanel() {
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: 8,
-      cursor: loading ? 'not-allowed' : 'pointer',
+      cursor: (loading || generating) ? 'not-allowed' : 'pointer',
       transition: 'all 0.2s ease',
       color: '#6B8EAE',
-      pointerEvents: loading ? 'none' : 'auto'
+      pointerEvents: (loading || generating) ? 'none' : 'auto'
     }}
     onMouseEnter={(e) => {
       if (!loading) {
@@ -639,7 +652,7 @@ function ChatPanel() {
       }
     }}
   >
-    <VoiceInput onTextReceived={(text) => setInputValue(text)} disabled={loading} />
+    <VoiceInput onTextReceived={(text) => setInputValue(text)} disabled={(loading || generating)} />
   </div>
 </Tooltip>
   </div>
@@ -661,10 +674,10 @@ function ChatPanel() {
       justifyContent: 'center',
       borderRadius: 8,
       background: '#6B8EAE',
-      cursor: loading || inputValue.trim() === '' ? 'not-allowed' : 'pointer',
+      cursor: (loading || generating || inputValue.trim() === '') ? 'not-allowed' : 'pointer',
       opacity: inputValue.trim() === '' ? 0.5 : 1,
       transition: 'all 0.2s ease',
-      pointerEvents: loading || inputValue.trim() === '' ? 'none' : 'auto'
+      pointerEvents: (loading || generating || inputValue.trim() === '') ? 'none' : 'auto'
     }}
     onClick={inputValue.trim() === '' ? undefined : handleSend}
     onMouseEnter={(e) => {

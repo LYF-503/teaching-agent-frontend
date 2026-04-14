@@ -169,29 +169,31 @@ function App() {
           </div>
         ) : (
           // 展开状态：显示完整预览面板 + 收起按钮
-          <>
-            <div style={{
-              height: 57,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0 16px 0 20px',
-              borderBottom: '1px solid #e8e8e8',
-              background: '#f0f2f5',
-              flexShrink: 0
-            }}>
-              <span style={{ color: '#6B8EAE', fontWeight: 600, fontSize: 18 }}>课件预览</span>
-              <Button
-                type="text"
-                icon={<MenuUnfoldOutlined />}
-                onClick={() => setRightPanelCollapsed(true)}
-                size="small"
-                style={{ color: '#6B8EAE' }}
-                title="收起预览面板"
-              />
-            </div>
-            <PreviewPanel />
-          </>
+         <>
+  <div style={{
+    height: 57,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '0 16px 0 20px',
+    borderBottom: '1px solid #e8e8e8',
+    background: '#f0f2f5',
+    flexShrink: 0
+  }}>
+    <span style={{ color: '#6B8EAE', fontWeight: 600, fontSize: 18 }}>课件预览</span>
+    <Button
+      type="text"
+      icon={<MenuUnfoldOutlined />}
+      onClick={() => setRightPanelCollapsed(true)}
+      size="small"
+      style={{ color: '#6B8EAE' }}
+      title="收起预览面板"
+    />
+  </div>
+  <div style={{ flex: 1, overflow: 'hidden' }}>
+    <PreviewPanel />
+  </div>
+</>
         )}
       </div>
     </div>
