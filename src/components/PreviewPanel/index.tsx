@@ -13,14 +13,25 @@ function PreviewPanel() {
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
 
   // 👇 添加这个 useEffect
-  useEffect(() => {
+ useEffect(() => {
+  const container = tabRefs.current.ppt?.parentElement;
+  if (!container) return;
+
+  const observer = new ResizeObserver(() => {
     const activeElement = tabRefs.current[activeTab];
     if (activeElement) {
-      const { offsetLeft, offsetWidth } = activeElement;
-      setIndicatorStyle({ left: offsetLeft, width: offsetWidth });
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = activeElement.getBoundingClientRect();
+      setIndicatorStyle({ 
+        left: elementRect.left - containerRect.left, 
+        width: elementRect.width 
+      });
     }
-  }, [activeTab]);
+  });
 
+  observer.observe(container);
+  return () => observer.disconnect();
+}, [activeTab]);
   // 获取当前 Tab 的名称
   const getTabName = () => {
     switch (activeTab) {
@@ -322,26 +333,36 @@ function PreviewPanel() {
     };
     const isActive = activeTab === key;
     return (
-      <button
-        key={key}
-        ref={(el) => { tabRefs.current[key] = el; }}
-        onClick={() => setActiveTab(key)}
-        style={{
-          padding: '6px 18px',
-          borderRadius: 40,
-          border: 'none',
-          background: 'transparent',
-          color: isActive ? '#fff' : '#4A637A',
-          fontSize: 13,
-          fontWeight: 500,
-          cursor: 'pointer',
-          transition: 'color 0.2s ease',
-          position: 'relative',
-          zIndex: 1
-        }}
-      >
-        {labels[key]}
-      </button>
+     <button
+  key={key}
+  ref={(el) => { tabRefs.current[key] = el; }}
+  onClick={() => setActiveTab(key)}
+  style={{
+    padding: '6px 18px',
+    borderRadius: 40,
+    border: 'none',
+    background: 'transparent',
+    color: isActive ? '#fff' : '#4A637A',
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'color 0.2s ease',
+    position: 'relative',
+    zIndex: 1
+  }}
+  onMouseEnter={(e) => {
+    if (!isActive) {
+      e.currentTarget.style.color = '#6B8EAE';
+    }
+  }}
+  onMouseLeave={(e) => {
+    if (!isActive) {
+      e.currentTarget.style.color = '#4A637A';
+    }
+  }}
+>
+  {labels[key]}
+</button>
     );
   })}
 </div>

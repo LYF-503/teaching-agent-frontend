@@ -40,7 +40,7 @@ function IntentCard({ data }: IntentCardProps) {
       size="small"
       style={{ 
         marginBottom: 16,
-        background: isHovered ? '#D5E4F0' : '#E9F0F7',
+        background: isHovered ? '#C5D8E8' : '#D5E4F0',
         borderRadius: 18,
         boxShadow: isHovered 
           ? '0 6px 16px rgba(0, 0, 0, 0.08)' 

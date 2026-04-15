@@ -9,10 +9,12 @@ interface PreviewState {
   generating: boolean;
   generateProgress: number;
   generateStatus: string;
+  rightPanelCollapsed: boolean;
   setGenerating: (value: boolean) => void;
   setProgress: (progress: number, status: string) => void;
   setPreview: (ppt: string | null, word: string | null, game: string | null) => void;
   clearPreview: () => void;
+  setRightPanelCollapsed: (value: boolean) => void;
 }
 
 export const usePreviewStore = create<PreviewState>((set) => ({
@@ -23,6 +25,7 @@ export const usePreviewStore = create<PreviewState>((set) => ({
   generating: false,
   generateProgress: 0,
   generateStatus: '',
+  rightPanelCollapsed: false,
   setGenerating: (value) => set({ generating: value }),
   setProgress: (progress, status) => set({ generateProgress: progress, generateStatus: status }),
   setPreview: (ppt, word, game) => set({ 
@@ -41,4 +44,5 @@ export const usePreviewStore = create<PreviewState>((set) => ({
     generateProgress: 0,
     generateStatus: '',
   }),
+  setRightPanelCollapsed: (value) => set({ rightPanelCollapsed: value }),
 }));

@@ -41,7 +41,7 @@ function ChatPanel() {
   const [tempNote, setTempNote] = useState<string>('');
   const [uploadTooltipOpen, setUploadTooltipOpen] = useState(false);
   const [voiceTooltipOpen, setVoiceTooltipOpen] = useState(false);
-  const { setGenerating: setGlobalGenerating, setProgress, setPreview } = usePreviewStore();
+  const { setGenerating: setGlobalGenerating, setProgress, setPreview,setRightPanelCollapsed } = usePreviewStore();
  
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -161,6 +161,7 @@ function ChatPanel() {
       antMessage.warning('请先进行一些对话，让智能体了解你的教学需求');
       return;
     }
+    setRightPanelCollapsed(false);
 
     setGenerating(true);
     setGenerateProgress(0);
