@@ -1,55 +1,48 @@
 import { useState, useRef } from 'react';
 import { Button, Modal, message } from 'antd';
 import { AudioOutlined, CloseOutlined } from '@ant-design/icons';
+import { uploadVoice, mockUploadVoice } from '../../api/upload';
+import { USE_MOCK } from '../../config';
 
 interface VoiceInputProps {
   onTextReceived: (text: string) => void;
   disabled?: boolean;
+  sessionId: string;               // 新增：当前会话ID
 }
 
-function VoiceInput({ onTextReceived, disabled }: VoiceInputProps) {
+function VoiceInput({ onTextReceived, disabled, sessionId }: VoiceInputProps) {
   const MAX_RECORDING_TIME = 60;
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
+  const [, setRecordingTime] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
 
-  const mockVoiceToText = (): Promise<string> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockTexts = [
-          '我想讲初中物理的欧姆定律',
-          '重点是电流与电压的关系',
-          '需要设计一个互动小游戏',
-          '时长大概45分钟',
-          '请帮我生成一个探究式的课件',
-        ];
-        const randomText = mockTexts[Math.floor(Math.random() * mockTexts.length)];
-        resolve(randomText);
-      }, 1500);
-    });
-  };
-
+  // 处理录音结束后的上传与识别
   const processAudio = async (blob: Blob) => {
     setIsProcessing(true);
-
     try {
-      const text = await mockVoiceToText();
+      let text: string;
+      if (USE_MOCK) {
+        text = await mockUploadVoice(blob);
+      } else {
+        text = await uploadVoice(sessionId, blob);
+      }
       onTextReceived(text);
-      message.success(`语音转文字成功：${text}`);
+      message.success(`语音识别成功：${text}`);
       handleClose();
     } catch (error) {
-      console.error('语音转文字失败:', error);
-      message.error('语音转文字失败，请重试');
+      console.error('语音识别失败:', error);
+      message.error('语音识别失败，请重试');
       setIsProcessing(false);
     }
   };
 
+  // 开始录音（与原来相同）
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -83,7 +76,6 @@ function VoiceInput({ onTextReceived, disabled }: VoiceInputProps) {
       timerRef.current = setInterval(() => {
         seconds++;
         setRecordingTime(seconds);
-        
         if (seconds >= MAX_RECORDING_TIME) {
           stopRecording();
           message.warning(`录音已达最大时长 ${MAX_RECORDING_TIME} 秒`);

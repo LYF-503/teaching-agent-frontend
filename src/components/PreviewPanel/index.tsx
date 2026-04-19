@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Tabs, Button, Input, Tooltip } from 'antd';
+import { Tabs,  Input, Tooltip } from 'antd';
+// Button,
 import { RedoOutlined, DownloadOutlined, CheckOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { TabsProps } from 'antd';
 import { usePreviewStore } from '../../store/previewStore';
@@ -8,7 +9,7 @@ function PreviewPanel() {
   const [activeTab, setActiveTab] = useState<string>('ppt');
   const [modifyInput, setModifyInput] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const { hasContent, generating, generateProgress, generateStatus } = usePreviewStore();
+  const { hasContent, pptUrl, wordUrl, gameUrl, generating, generateProgress, generateStatus } = usePreviewStore();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({ ppt: null, word: null, game: null });
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
 
@@ -70,7 +71,27 @@ function PreviewPanel() {
 
   // 处理导出
   const handleExport = () => {
-    console.log(`导出 ${getTabName()}`);
+    const currentUrl = activeTab === 'ppt' ? pptUrl : activeTab === 'word' ? wordUrl : gameUrl;
+    if (currentUrl) {
+      // 构建完整的下载 URL
+      let downloadUrl = currentUrl;
+      if (!downloadUrl.startsWith('http')) {
+        // 检查是否已经包含 /static/ 前缀
+        if (!downloadUrl.startsWith('/static/')) {
+          downloadUrl = `/static${downloadUrl}`;
+        }
+        // 构建完整的 URL
+        downloadUrl = `http://localhost:8000${downloadUrl}`;
+      }
+      // 创建下载链接并触发点击
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.target = '_blank';
+      link.download = ''; // 让浏览器自动处理文件名
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   // 空状态占位
@@ -235,11 +256,127 @@ function PreviewPanel() {
   // 根据是否有内容显示预览或空状态
   const getPreviewContent = () => {
     if (!hasContent) return emptyPlaceholder;
+    
+    const currentUrl = activeTab === 'ppt' ? pptUrl : activeTab === 'word' ? wordUrl : gameUrl;
+    
+    if (!currentUrl) {
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          paddingTop: 100,
+          height: '100%',
+          minHeight: 300,
+          color: '#999'
+        }}>
+          <FileTextOutlined style={{ fontSize: 48, color: '#D5E4F0', marginBottom: 16 }} />
+          <p style={{ fontSize: 16, color: '#999', marginBottom: 8 }}>暂无{getTabName()}内容</p>
+          <p style={{ fontSize: 13, color: '#bfbfbf' }}>请先生成{getTabName()}</p>
+        </div>
+      );
+    }
+    
+    // 根据类型显示不同的预览内容
     switch (activeTab) {
-      case 'ppt': return pptPreview;
-      case 'word': return wordPreview;
-      case 'game': return gamePreview;
-      default: return emptyPlaceholder;
+      case 'ppt':
+        return (
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ 
+              background: 'linear-gradient(135deg, #6B8EAE 0%, #95AEC7 100%)',
+              borderRadius: 12,
+              padding: '20px 16px',
+              color: '#fff'
+            }}>
+              <h3 style={{ color: '#fff', marginBottom: 8 }}>PPT 课件</h3>
+              <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>已生成，点击导出可下载</p>
+            </div>
+            <div style={{ 
+              background: '#f5f7fa', 
+              borderRadius: 8, 
+              padding: 16,
+              borderLeft: '4px solid #6B8EAE'
+            }}>
+              <p style={{ fontWeight: 500, marginBottom: 8 }}>📌 生成信息</p>
+              <p style={{ color: '#666', fontSize: 13 }}>文件已生成，您可以通过导出功能下载完整 PPT 文件。</p>
+            </div>
+            <div style={{ 
+              background: '#f5f7fa', 
+              borderRadius: 8, 
+              padding: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              color: '#6B8EAE'
+            }}>
+              <CheckOutlined />
+              <span>生成成功 · 点击导出可下载</span>
+            </div>
+          </div>
+        );
+      case 'word':
+        return (
+          <div style={{ 
+            background: '#fff',
+            padding: 16,
+            borderRadius: 12
+          }}>
+            <h3 style={{ marginBottom: 16, color: '#4A637A' }}>Word 教案</h3>
+            
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>🎯 生成状态</p>
+              <div style={{ background: '#f5f7fa', padding: 12, borderRadius: 8 }}>
+                <p style={{ fontSize: 13, color: '#666' }}>教案文件已生成完成</p>
+                <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>包含完整的教学目标、教学过程和课后作业</p>
+              </div>
+            </div>
+            
+            <div>
+              <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>📝 操作提示</p>
+              <p style={{ color: '#666', fontSize: 13 }}>点击导出按钮下载完整的 Word 教案文件</p>
+            </div>
+          </div>
+        );
+      case 'game':
+        return (
+          <div style={{ 
+            background: 'linear-gradient(135deg, #E9F0F7 0%, #f5f7fa 100%)',
+            borderRadius: 16,
+            padding: 20,
+            textAlign: 'center'
+          }}>
+            <div style={{ 
+              background: '#fff', 
+              borderRadius: 12, 
+              padding: 20,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+            }}>
+              <h3 style={{ color: '#4A637A', marginBottom: 20 }}>🎮 互动游戏</h3>
+              
+              <div style={{ 
+                background: '#6B8EAE', 
+                color: '#fff', 
+                padding: '12px 16px',
+                borderRadius: 12,
+                marginBottom: 20
+              }}>
+                <p style={{ fontSize: 16 }}>游戏已生成完成</p>
+              </div>
+              
+              <p style={{ marginTop: 20, color: '#6B8EAE', fontSize: 13 }}>
+                点击导出按钮下载完整的游戏文件
+              </p>
+            </div>
+          </div>
+        );
+      default:
+        return emptyPlaceholder;
     }
   };
 

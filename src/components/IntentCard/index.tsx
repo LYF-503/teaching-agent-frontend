@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Card, Tag, } from 'antd';
+import { Card, Tag } from 'antd';
 import { CaretDownFilled, CaretUpFilled } from '@ant-design/icons';
 
+// 扩展接口，兼容后端返回的字段名
 interface IntentData {
   subject?: string;
   topic?: string;
@@ -9,27 +10,98 @@ interface IntentData {
   difficultPoints?: string[];
   duration?: number;
   style?: string;
+  // 后端可能返回的原始字段（下划线命名）
+  key_points?: string[];
+  difficult_points?: string[];
+  duration_minutes?: number;
+  teaching_style?: string;
+  target_audience?: string;
+  special_requirements?: string;
+  [key: string]: any; // 允许其他字段
 }
 
 interface IntentCardProps {
-  data?: IntentData;
+  data?: IntentData | string | null;
 }
 
 function IntentCard({ data }: IntentCardProps) {
   const [collapsed, setCollapsed] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
 
+  // 规范化数据：将后端可能返回的各种字段名转换为组件内部使用的字段
+  const normalizeData = (rawData: any): IntentData => {
+    if (!rawData) return {};
+
+    // 如果传入的是字符串，尝试解析为 JSON
+    let parsed = rawData;
+    if (typeof rawData === 'string') {
+      try {
+        parsed = JSON.parse(rawData);
+      } catch {
+        return {};
+      }
+    }
+
+    // 如果已经是对象，进行字段映射
+    const result: IntentData = {};
+
+    // 学科
+    if (parsed.subject) result.subject = parsed.subject;
+    // 课题 / 主题
+    if (parsed.topic) result.topic = parsed.topic;
+
+    // 知识点：优先使用 keyPoints 数组，否则使用 key_points
+    if (parsed.keyPoints && Array.isArray(parsed.keyPoints)) {
+      result.keyPoints = parsed.keyPoints;
+    } else if (parsed.key_points && Array.isArray(parsed.key_points)) {
+      result.keyPoints = parsed.key_points;
+    } else if (typeof parsed.key_points === 'string') {
+      // 如果是逗号分隔的字符串，分割成数组
+      result.keyPoints = parsed.key_points.split(/[,，]/).map((s: string) => s.trim());
+    }
+
+    // 重难点
+    if (parsed.difficultPoints && Array.isArray(parsed.difficultPoints)) {
+      result.difficultPoints = parsed.difficultPoints;
+    } else if (parsed.difficult_points && Array.isArray(parsed.difficult_points)) {
+      result.difficultPoints = parsed.difficult_points;
+    } else if (typeof parsed.difficult_points === 'string') {
+      result.difficultPoints = parsed.difficult_points.split(/[,，]/).map((s: string) => s.trim());
+    }
+
+    // 时长：优先使用 duration，否则使用 duration_minutes
+    if (parsed.duration) {
+      result.duration = parsed.duration;
+    } else if (parsed.duration_minutes) {
+      result.duration = parsed.duration_minutes;
+    }
+
+    // 教学风格：优先使用 style，否则使用 teaching_style
+    if (parsed.style) {
+      result.style = parsed.style;
+    } else if (parsed.teaching_style) {
+      result.style = parsed.teaching_style;
+    }
+
+    return result;
+  };
+
+  const normalizedData = normalizeData(data);
   const mockData: IntentData = {
-    subject: '初中物理',
-    topic: '欧姆定律',
-    keyPoints: ['电流', '电压', '电阻', '欧姆定律公式'],
-    difficultPoints: ['伏安特性曲线', '电阻的计算'],
-    duration: 45,
+    subject: '暂无',
+    topic: '暂无',
+    keyPoints: ['暂无', '暂无', '暂无', '暂无'],
+    difficultPoints: ['暂无', '暂无'],
+    duration: 40,
     style: '探究式',
   };
 
-  const displayData = data?.subject ? data : mockData;
-  const hasData = displayData.subject || displayData.topic || displayData.keyPoints?.length;
+  // 合并数据：如果 normalizedData 有值则使用，否则使用 mockData
+  const hasValidData = (d: IntentData) => {
+    return !!(d.subject || d.topic || (d.keyPoints && d.keyPoints.length > 0));
+  };
+  const displayData = hasValidData(normalizedData) ? normalizedData : mockData;
+  const hasData = hasValidData(displayData);
 
   if (!hasData && collapsed) {
     return null;
@@ -58,7 +130,6 @@ function IntentCard({ data }: IntentCardProps) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* 标题栏 */}
       <div 
         style={{ 
           display: 'flex', 
@@ -72,16 +143,15 @@ function IntentCard({ data }: IntentCardProps) {
           当前教学需求
         </span>
         {collapsed ? 
-  <CaretDownFilled style={{ fontSize: 14, color: '#6B8EAE' }} /> : 
-  <CaretUpFilled style={{ fontSize: 14, color: '#6B8EAE' }} />
-}
+          <CaretDownFilled style={{ fontSize: 14, color: '#6B8EAE' }} /> : 
+          <CaretUpFilled style={{ fontSize: 14, color: '#6B8EAE' }} />
+        }
       </div>
 
-      {/* 内容区 */}
       {!collapsed && hasData && (
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* 学科和课题 */}
-          <div style={{ display: 'flex', gap: 20 }}>
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             {displayData.subject && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: '#4A637A', fontSize: 13, opacity: 0.8 }}>学科</span>
@@ -159,7 +229,7 @@ function IntentCard({ data }: IntentCardProps) {
           )}
 
           {/* 时长和风格 */}
-          <div style={{ display: 'flex', gap: 20 }}>
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             {displayData.duration && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: '#4A637A', fontSize: 13, opacity: 0.8 }}>时长</span>

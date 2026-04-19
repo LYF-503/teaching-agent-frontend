@@ -1,6 +1,8 @@
 // src/api/client.ts
 
-const BASE_URL = 'http://localhost:8000/v1';
+import { API_BASE_URL } from '../config';
+
+const BASE_URL = API_BASE_URL;
 
 // 通用的请求函数
 export async function apiRequest<T>(
