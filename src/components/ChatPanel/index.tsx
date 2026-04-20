@@ -51,7 +51,7 @@ function ChatPanel({ externalSessionId }: ChatPanelProps) {
   const [tempNote, setTempNote] = useState<string>('');
   const [uploadTooltipOpen, setUploadTooltipOpen] = useState(false);
   const [voiceTooltipOpen, setVoiceTooltipOpen] = useState(false);
-  const { setGenerating: setGlobalGenerating, setProgress, setPreview, setRightPanelCollapsed } = usePreviewStore();
+  const { setGenerating: setGlobalGenerating, setProgress, setPreview, setRightPanelCollapsed, modifyInput, setLastGenerateParams } = usePreviewStore();
   const initializedRef = useRef(false);
   const [intentStatus, setIntentStatus] = useState<any>(null);
 
@@ -192,40 +192,102 @@ function ChatPanel({ externalSessionId }: ChatPanelProps) {
     setProgress(0, '正在生成...');
 
     try {
-      const lastUserMessage = messages.filter(msg => msg.role === 'user').pop();
-      const topic = lastUserMessage?.content || '教学课件';
+      // 从 intentStatus 获取课题作为 topic
+      const topic = intentStatus?.topic || intentStatus?.subject || '教学课件';
 
-      const conversationHistory = messages
-        .map(msg => `${msg.role === 'user' ? '用户' : '智能体'}: ${msg.content}`)
-        .join('\n');
+      // 将 intentStatus 的其余字段格式化为 requirements
+      let requirements = '';
+      if (intentStatus) {
+        const parts = [];
+        if (intentStatus.subject) parts.push(`学科: ${intentStatus.subject}`);
+        if (intentStatus.topic) parts.push(`课题: ${intentStatus.topic}`);
+        if (intentStatus.keyPoints && intentStatus.keyPoints.length > 0) {
+          parts.push(`知识点: ${intentStatus.keyPoints.join(', ')}`);
+        }
+        if (intentStatus.difficultPoints && intentStatus.difficultPoints.length > 0) {
+          parts.push(`重难点: ${intentStatus.difficultPoints.join(', ')}`);
+        }
+        if (intentStatus.duration) parts.push(`时长: ${intentStatus.duration} 分钟`);
+        if (intentStatus.style) parts.push(`教学风格: ${intentStatus.style}`);
+        if (intentStatus.target_audience) parts.push(`目标受众: ${intentStatus.target_audience}`);
+        if (intentStatus.special_requirements) parts.push(`特殊要求: ${intentStatus.special_requirements}`);
+        requirements = parts.join('\n');
+      }
 
-      const requirements = `对话历史：\n${conversationHistory}`;
+      // 如果没有 intentStatus 数据，使用对话历史作为备选
+      if (!requirements) {
+        const conversationHistory = messages
+          .map(msg => `${msg.role === 'user' ? '用户' : '智能体'}: ${msg.content}`)
+          .join('\n');
+        requirements = `对话历史：\n${conversationHistory}`;
+      }
+
+      // 生成带时间戳的文件名
+      const timestamp = Date.now();
+      const formatTimestamp = (ts: number) => {
+        const date = new Date(ts);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        return `${year}${month}${day}${hours}${minutes}${seconds}`;
+      };
+      const timeStr = formatTimestamp(timestamp);
+
+      // 确定最终的 requirements
+      const finalRequirements = modifyInput.trim() || requirements;
+
+      console.log('=== 生成请求参数 ===');
+      console.log('topic:', topic);
+      console.log('requirements from intent:', requirements);
+      console.log('modifyInput:', modifyInput);
+      console.log('final requirements:', finalRequirements);
+      console.log('intentStatus:', intentStatus);
+
+      // 保存生成参数到 store
+      setLastGenerateParams(topic, finalRequirements, generateType, generateType === 'game' ? gameType : null);
 
       let result;
       if (generateType === 'lesson-plan') {
-        result = await generateLessonPlan(topic, requirements, `${topic}_教案.docx`);
+        result = await generateLessonPlan(topic, finalRequirements, `${topic}_${timeStr}_教案.docx`);
       } else if (generateType === 'ppt') {
-        result = await generatePPT(topic, requirements, `${topic}.pptx`);
+        result = await generatePPT(topic, finalRequirements, `${topic}_${timeStr}.pptx`);
       } else if (generateType === 'game') {
-        result = await generateGame(topic, gameType, requirements, `${topic}_game.html`);
+        result = await generateGame(topic, gameType, finalRequirements, `${topic}_${timeStr}_game.html`);
       }
 
       if (result?.success && result.data) {
+        console.log('=== 后端响应 ===');
+        console.log('完整响应:', result);
+        console.log('access_url:', result.data.access_url);
+        console.log('file_path:', result.data.file_path);
+        
         antMessage.success(result.message || '生成成功！');
 
-        if (generateType === 'ppt') {
-          setPreview(result.data.access_url, null, null);
-        } else if (generateType === 'lesson-plan') {
-          setPreview(null, result.data.access_url, null);
-        } else if (generateType === 'game') {
-          setPreview(null, null, result.data.access_url);
+        // 处理 access_url
+        let pptUrl = null;
+        let wordUrl = null;
+        let gameUrl = null;
+
+        if (generateType === 'ppt' && result.data.access_url) {
+          pptUrl = result.data.access_url;
+        } else if (generateType === 'lesson-plan' && result.data.access_url) {
+          wordUrl = result.data.access_url;
+        } else if (generateType === 'game' && result.data.access_url) {
+          gameUrl = result.data.access_url;
         }
+
+        setPreview(pptUrl, wordUrl, gameUrl);
 
         Modal.success({
           title: '生成成功',
           content: result.message || '内容已生成，请在右侧预览面板查看和下载。',
         });
       } else {
+        console.log('=== 生成失败 ===');
+        console.log('响应:', result);
         antMessage.error(result?.message || '生成失败，请重试');
       }
     } catch (error) {

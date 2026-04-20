@@ -1,20 +1,86 @@
 import { useState, useRef, useEffect } from 'react';
-import { Tabs,  Input, Tooltip } from 'antd';
+import { Tabs, Input, Tooltip } from 'antd';
 // Button,
 import { RedoOutlined, DownloadOutlined, CheckOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { TabsProps } from 'antd';
 import { usePreviewStore } from '../../store/previewStore';
+import { generateLessonPlan, generatePPT, generateGame } from '../../api/generate';
+import * as docx from 'docx-preview';
+import { parsePptxToJson } from 'ppt2json';
+import { PPTXPreviewer, type Slide } from 'pptx-previewer';
+
+// 添加全局样式
+const PreviewPanelStyle = () => (
+  <style>
+    {
+`
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .docx-preview-content {
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 20px !important;
+      }
+      
+      .docx-preview-content table {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      
+      .docx-preview-content img {
+        max-width: 100% !important;
+        height: auto !important;
+      }
+      
+      .docx-preview-content p {
+        word-wrap: break-word !important;
+      }
+      
+      /* 自定义滚动条样式 */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+      }
+`
+    }
+  </style>
+);
 
 function PreviewPanel() {
   const [activeTab, setActiveTab] = useState<string>('ppt');
-  const [modifyInput, setModifyInput] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const { hasContent, pptUrl, wordUrl, gameUrl, generating, generateProgress, generateStatus } = usePreviewStore();
+  const { hasContent, pptUrl, wordUrl, gameUrl, generating, generateProgress, generateStatus, modifyInput, setModifyInput } = usePreviewStore();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({ ppt: null, word: null, game: null });
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+  
+  // 预览容器引用（用于Word文档）
+  const wordPreviewRef = useRef<HTMLDivElement>(null);
+  
+  // PPT预览状态
+  const [pptSlides, setPptSlides] = useState<Slide[]>([]);
+  const [pptLoading, setPptLoading] = useState(false);
+  const [pptError, setPptError] = useState<string | null>(null);
 
   // 👇 添加这个 useEffect
- useEffect(() => {
+  useEffect(() => {
   const container = tabRefs.current.ppt?.parentElement;
   if (!container) return;
 
@@ -33,6 +99,224 @@ function PreviewPanel() {
   observer.observe(container);
   return () => observer.disconnect();
 }, [activeTab]);
+
+  // 预览渲染逻辑
+  useEffect(() => {
+    console.log('Word预览useEffect触发:', {
+      activeTab,
+      wordUrl,
+      hasWordUrl: !!wordUrl,
+      hasRef: !!wordPreviewRef.current
+    });
+    
+    // 渲染Word
+    if (activeTab === 'word' && wordUrl && wordPreviewRef.current) {
+      const container = wordPreviewRef.current;
+      container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">正在加载Word文档...</div>';
+      
+      // 构建完整的预览 URL（与getPreviewContent中的逻辑一致）
+      let previewUrl = wordUrl;
+      if (!previewUrl.startsWith('http')) {
+        previewUrl = previewUrl.replace(/\.\//g, '');
+        previewUrl = previewUrl.replace(/\/static\/static/g, '/static');
+        
+        if (!previewUrl.startsWith('/static')) {
+          if (previewUrl.includes('exports')) {
+            const exportsIndex = previewUrl.indexOf('exports');
+            if (exportsIndex !== -1) {
+              previewUrl = '/static/' + previewUrl.substring(exportsIndex);
+            } else {
+              previewUrl = `/static/exports/${previewUrl}`;
+            }
+          } else {
+            previewUrl = `/static/exports/${previewUrl}`;
+          }
+        }
+        
+        previewUrl = `http://localhost:8000${previewUrl}`;
+      }
+      
+      console.log('开始加载Word文档:', previewUrl);
+      
+      fetch(previewUrl)
+        .then(response => {
+          console.log('fetch响应状态:', response.status);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.arrayBuffer();
+        })
+        .then(buffer => {
+          console.log('成功获取buffer, 大小:', buffer.byteLength);
+          try {
+            // 使用更兼容的方式调用docx.renderAsync
+            docx.renderAsync(buffer, container as HTMLElement).then(() => {
+              console.log('Word文档渲染完成');
+              // 应用样式调整
+              setTimeout(() => {
+                const docContent = container.firstChild as HTMLElement;
+                if (docContent) {
+                  // 应用基础样式
+                  docContent.style.maxWidth = '100%';
+                  docContent.style.width = '100%';
+                  docContent.style.boxSizing = 'border-box';
+                  docContent.style.padding = '0';
+                  docContent.style.margin = '0';
+                  docContent.style.display = 'block';
+                  docContent.style.textAlign = 'left';
+                  docContent.style.position = 'relative';
+                  docContent.style.left = '0';
+                  docContent.style.transform = 'none';
+                  
+                  // 处理子元素样式
+                  const childElements = docContent.querySelectorAll('*');
+                  childElements.forEach((element) => {
+                    const el = element as HTMLElement;
+                    el.style.maxWidth = '100%';
+                    el.style.boxSizing = 'border-box';
+                    el.style.position = 'relative';
+                    el.style.left = '0';
+                    el.style.transform = 'none';
+                  });
+                } else {
+                  console.log('Word渲染成功，但未找到渲染内容');
+                }
+              }, 100);
+            }).catch((err: any) => {
+              console.error('Word渲染失败:', err);
+              container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Word预览加载中...</div>';
+            });
+          } catch (error) {
+            console.error('Word预览失败:', error);
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Word预览失败，请下载查看</div>';
+          }
+        })
+        .catch(error => {
+          console.error('Word文件加载失败:', error);
+          container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Word文件加载失败，请检查网络连接</div>';
+        });
+    }
+  }, [activeTab, wordUrl]);
+
+  // PPT预览渲染逻辑
+  useEffect(() => {
+    console.log('PPT预览useEffect触发:', {
+      activeTab,
+      pptUrl,
+      hasPptUrl: !!pptUrl
+    });
+
+    if (activeTab === 'ppt' && pptUrl) {
+      setPptLoading(true);
+      setPptError(null);
+      setPptSlides([]);
+
+      // 构建完整的预览 URL
+      let previewUrl = pptUrl;
+      if (!previewUrl.startsWith('http')) {
+        previewUrl = previewUrl.replace(/\.\//g, '');
+        previewUrl = previewUrl.replace(/\/static\/static/g, '/static');
+        
+        if (!previewUrl.startsWith('/static')) {
+          if (previewUrl.includes('exports')) {
+            const exportsIndex = previewUrl.indexOf('exports');
+            if (exportsIndex !== -1) {
+              previewUrl = '/static/' + previewUrl.substring(exportsIndex);
+            } else {
+              previewUrl = `/static/exports/${previewUrl}`;
+            }
+          } else {
+            previewUrl = `/static/exports/${previewUrl}`;
+          }
+        }
+        
+        previewUrl = `http://localhost:8000${previewUrl}`;
+      }
+
+      console.log('开始加载PPT文件:', previewUrl);
+
+      // 下载PPT文件
+      fetch(previewUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.arrayBuffer();
+        })
+        .then(async (arrayBuffer) => {
+          console.log('成功获取PPT buffer, 大小:', arrayBuffer.byteLength);
+          
+          // 创建File对象
+          const file = new File([arrayBuffer], 'presentation.pptx', {
+            type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          });
+
+          try {
+            // 使用ppt2json解析PPT文件
+            const result = await parsePptxToJson(file) as any;
+            console.log('PPT解析成功:', result);
+            console.log('警告信息:', result.warnings);
+            console.log('presentation属性:', result.presentation);
+            
+            // 检查解析结果的详细结构
+            if (result.presentation) {
+              console.log('presentation.slides:', result.presentation.slides);
+              console.log('presentation内容:', Object.keys(result.presentation));
+            }
+
+            // 转换为pptx-previewer需要的格式
+            let slides: Slide[] = [];
+            
+            // 检查不同可能的slides路径
+            if (result && result.slides) {
+              // 直接在result中找到slides
+              slides = result.slides.map((slide: any) => ({
+                background: slide.background || { type: 'solid', color: '#ffffff' },
+                elements: slide.elements || []
+              }));
+            } else if (result && result.presentationJSON && result.presentationJSON.slides) {
+              // 在presentationJSON中找到slides
+              slides = result.presentationJSON.slides.map((slide: any) => ({
+                background: slide.background || { type: 'solid', color: '#ffffff' },
+                elements: slide.elements || []
+              }));
+            } else if (result && result.presentation && result.presentation.slides) {
+              // 在presentation中找到slides
+              slides = result.presentation.slides.map((slide: any) => ({
+                background: slide.background || { type: 'solid', color: '#ffffff' },
+                elements: slide.elements || []
+              }));
+            } else if (result && result.presentation) {
+              // 检查presentation中的其他可能的slides路径
+              console.log('检查presentation中的其他属性:', Object.keys(result.presentation));
+              // 尝试创建一个默认的slide
+              slides = [{
+                background: { type: 'solid', color: '#ffffff' },
+                elements: []
+              }];
+            }
+
+            if (slides.length > 0) {
+              setPptSlides(slides);
+            } else {
+              throw new Error('解析结果中没有找到slides数据');
+            }
+          } catch (error) {
+            console.error('PPT解析失败:', error);
+            setPptError('PPT解析失败，请下载查看');
+          }
+        })
+        .catch(error => {
+          console.error('PPT文件加载失败:', error);
+          setPptError('PPT文件加载失败，请检查网络连接');
+        })
+        .finally(() => {
+          setPptLoading(false);
+        });
+    }
+  }, [activeTab, pptUrl]);
+
+
   // 获取当前 Tab 的名称
   const getTabName = () => {
     switch (activeTab) {
@@ -44,21 +328,119 @@ function PreviewPanel() {
   };
 
   // 处理重新生成
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
+    const store = usePreviewStore.getState();
+    const { lastTopic, lastGenerateType, lastGameType, modifyInput } = store;
+    
+    if (!lastGenerateType || !lastTopic) {
+      console.warn('没有上次生成的参数');
+      return;
+    }
+    
     setLoading(true);
-    setTimeout(() => {
+    store.setGenerating(true);
+    store.setProgress(0, '正在重新生成...');
+    
+    console.log('=== 重新生成参数 ===');
+    console.log('lastTopic:', lastTopic);
+    console.log('lastGenerateType:', lastGenerateType);
+    console.log('lastGameType:', lastGameType);
+    console.log('modifyInput:', modifyInput);
+    
+    try {
+      const store = usePreviewStore.getState();
+      const { lastRequirements } = store;
+      const baseRequirements = lastRequirements || '';
+      const modifyRequirements = modifyInput.trim();
+      const finalRequirements = baseRequirements + (modifyRequirements ? `\n\n修改意见：${modifyRequirements}` : '');
+      const timestamp = Date.now();
+      const timeStr = timestamp.toString();
+      
+      let result;
+      if (lastGenerateType === 'lesson-plan') {
+        result = await generateLessonPlan(lastTopic, finalRequirements, `${lastTopic}_${timeStr}_教案.docx`);
+      } else if (lastGenerateType === 'ppt') {
+        result = await generatePPT(lastTopic, finalRequirements, `${lastTopic}_${timeStr}.pptx`);
+      } else if (lastGenerateType === 'game' && lastGameType) {
+        result = await generateGame(lastTopic, lastGameType, finalRequirements, `${lastTopic}_${timeStr}_game.html`);
+      }
+      
+      console.log('生成结果:', result);
+      
+      if (result?.success && result.data) {
+        if (lastGenerateType === 'ppt') {
+          store.setPreview(result.data.access_url, null, null);
+        } else if (lastGenerateType === 'lesson-plan') {
+          store.setPreview(null, result.data.access_url, null);
+        } else if (lastGenerateType === 'game') {
+          store.setPreview(null, null, result.data.access_url);
+        }
+      }
+    } catch (error) {
+      console.error('重新生成失败:', error);
+    } finally {
       setLoading(false);
-    }, 1500);
+      store.setGenerating(false);
+    }
   };
 
   // 处理应用修改
-  const handleApplyModify = () => {
+  const handleApplyModify = async () => {
     if (!modifyInput.trim()) return;
+    
+    const store = usePreviewStore.getState();
+    const { lastTopic, lastGenerateType, lastGameType } = store;
+    
+    if (!lastGenerateType || !lastTopic) {
+      console.warn('没有上次生成的参数');
+      return;
+    }
+    
     setLoading(true);
-    setTimeout(() => {
+    store.setGenerating(true);
+    store.setProgress(0, '正在应用修改...');
+    
+    console.log('=== 应用修改参数 ===');
+    console.log('lastTopic:', lastTopic);
+    console.log('lastGenerateType:', lastGenerateType);
+    console.log('lastGameType:', lastGameType);
+    console.log('modifyInput:', modifyInput);
+    
+    try {
+      const store = usePreviewStore.getState();
+      const { lastRequirements } = store;
+      const baseRequirements = lastRequirements || '';
+      const modifyRequirements = modifyInput.trim();
+      const finalRequirements = baseRequirements + (modifyRequirements ? `\n\n修改意见：${modifyRequirements}` : '');
+      const timestamp = Date.now();
+      const timeStr = timestamp.toString();
+      
+      let result;
+      if (lastGenerateType === 'lesson-plan') {
+        result = await generateLessonPlan(lastTopic, finalRequirements, `${lastTopic}_${timeStr}_教案.docx`);
+      } else if (lastGenerateType === 'ppt') {
+        result = await generatePPT(lastTopic, finalRequirements, `${lastTopic}_${timeStr}.pptx`);
+      } else if (lastGenerateType === 'game' && lastGameType) {
+        result = await generateGame(lastTopic, lastGameType, finalRequirements, `${lastTopic}_${timeStr}_game.html`);
+      }
+      
+      console.log('生成结果:', result);
+      
+      if (result?.success && result.data) {
+        if (lastGenerateType === 'ppt') {
+          store.setPreview(result.data.access_url, null, null);
+        } else if (lastGenerateType === 'lesson-plan') {
+          store.setPreview(null, result.data.access_url, null);
+        } else if (lastGenerateType === 'game') {
+          store.setPreview(null, null, result.data.access_url);
+        }
+      }
+    } catch (error) {
+      console.error('应用修改失败:', error);
+    } finally {
       setLoading(false);
-      setModifyInput('');
-    }, 1500);
+      store.setGenerating(false);
+    }
   };
 
   // 处理键盘事件：Enter 发送，Shift+Enter 换行
@@ -73,16 +455,39 @@ function PreviewPanel() {
   const handleExport = () => {
     const currentUrl = activeTab === 'ppt' ? pptUrl : activeTab === 'word' ? wordUrl : gameUrl;
     if (currentUrl) {
-      // 构建完整的下载 URL
+      // 构建完整的下载 URL - 使用与预览相同的逻辑
       let downloadUrl = currentUrl;
+      console.log('原始导出 URL:', downloadUrl);
+      
+      // 处理不同格式的 URL
       if (!downloadUrl.startsWith('http')) {
-        // 检查是否已经包含 /static/ 前缀
-        if (!downloadUrl.startsWith('/static/')) {
-          downloadUrl = `/static${downloadUrl}`;
+        // 清理 URL 中的多余部分
+        downloadUrl = downloadUrl.replace(/\.\//g, '');
+        downloadUrl = downloadUrl.replace(/\/static\/static/g, '/static');
+        
+        // 确保以 /static 开头
+        if (!downloadUrl.startsWith('/static')) {
+          // 检查是否包含 exports 目录
+          if (downloadUrl.includes('exports')) {
+            // 如果包含 exports，提取 exports 及其后面的部分
+            const exportsIndex = downloadUrl.indexOf('exports');
+            if (exportsIndex !== -1) {
+              downloadUrl = '/static/' + downloadUrl.substring(exportsIndex);
+            } else {
+              // 否则使用默认路径
+              downloadUrl = `/static/exports/${downloadUrl}`;
+            }
+          } else {
+            // 直接使用 /static/exports/ 路径
+            downloadUrl = `/static/exports/${downloadUrl}`;
+          }
         }
+        
         // 构建完整的 URL
         downloadUrl = `http://localhost:8000${downloadUrl}`;
       }
+      
+      console.log('处理后的导出 URL:', downloadUrl);
       // 创建下载链接并触发点击
       const link = document.createElement('a');
       link.href = downloadUrl;
@@ -112,153 +517,13 @@ function PreviewPanel() {
     </div>
   );
 
-  // PPT 预览内容（模拟）
-  const pptPreview = (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column',
-      gap: 12
-    }}>
-      <div style={{ 
-        background: 'linear-gradient(135deg, #6B8EAE 0%, #95AEC7 100%)',
-        borderRadius: 12,
-        padding: '20px 16px',
-        color: '#fff'
-      }}>
-        <h3 style={{ color: '#fff', marginBottom: 8 }}>欧姆定律</h3>
-        <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>初中物理 · 第3课时</p>
-      </div>
-      <div style={{ 
-        background: '#f5f7fa', 
-        borderRadius: 8, 
-        padding: 16,
-        borderLeft: '4px solid #6B8EAE'
-      }}>
-        <p style={{ fontWeight: 500, marginBottom: 8 }}>📌 电流与电压的关系</p>
-        <p style={{ color: '#666', fontSize: 13 }}>当电阻一定时，通过导体的电流与导体两端的电压成正比。</p>
-      </div>
-      <div style={{ 
-        background: '#f5f7fa', 
-        borderRadius: 8, 
-        padding: 16,
-        borderLeft: '4px solid #95AEC7'
-      }}>
-        <p style={{ fontWeight: 500, marginBottom: 8 }}>📌 电阻的概念</p>
-        <p style={{ color: '#666', fontSize: 13 }}>电阻是导体对电流的阻碍作用，单位是欧姆（Ω）。</p>
-      </div>
-      <div style={{ 
-        background: '#f5f7fa', 
-        borderRadius: 8, 
-        padding: 16,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        color: '#6B8EAE'
-      }}>
-        <CheckOutlined />
-        <span>共 8 页 · 点击导出可下载完整PPT</span>
-      </div>
-    </div>
-  );
-
-  // Word 教案预览内容（模拟）
-  const wordPreview = (
-    <div style={{ 
-      background: '#fff',
-      padding: 16,
-      borderRadius: 12
-    }}>
-      <h3 style={{ marginBottom: 16, color: '#4A637A' }}>《欧姆定律》教案</h3>
-      
-      <div style={{ marginBottom: 16 }}>
-        <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>🎯 教学目标</p>
-        <ul style={{ paddingLeft: 20, color: '#666', fontSize: 13 }}>
-          <li>理解电流、电压、电阻的概念</li>
-          <li>掌握欧姆定律公式 I = U/R</li>
-          <li>能够运用欧姆定律解决简单电路问题</li>
-        </ul>
-      </div>
-      
-      <div style={{ marginBottom: 16 }}>
-        <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>📖 教学过程</p>
-        <div style={{ background: '#f5f7fa', padding: 12, borderRadius: 8 }}>
-          <p style={{ fontSize: 13, color: '#666' }}><strong>导入（5分钟）：</strong> 通过生活实例引入电流概念</p>
-          <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}><strong>新授（25分钟）：</strong> 实验探究电流与电压、电阻的关系</p>
-          <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}><strong>巩固（10分钟）：</strong> 例题讲解与课堂练习</p>
-          <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}><strong>小结（5分钟）：</strong> 总结欧姆定律及应用</p>
-        </div>
-      </div>
-      
-      <div>
-        <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>📝 课后作业</p>
-        <p style={{ color: '#666', fontSize: 13 }}>完成课本第45页练习题1-3题</p>
-      </div>
-    </div>
-  );
-
-  // 游戏预览内容（模拟）
-  const gamePreview = (
-    <div style={{ 
-      background: 'linear-gradient(135deg, #E9F0F7 0%, #f5f7fa 100%)',
-      borderRadius: 16,
-      padding: 20,
-      textAlign: 'center'
-    }}>
-      <div style={{ 
-        background: '#fff', 
-        borderRadius: 12, 
-        padding: 20,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
-      }}>
-        <h3 style={{ color: '#4A637A', marginBottom: 20 }}>🎮 欧姆定律挑战</h3>
-        
-        <div style={{ 
-          background: '#6B8EAE', 
-          color: '#fff', 
-          padding: '12px 16px',
-          borderRadius: 12,
-          marginBottom: 20
-        }}>
-          <p style={{ fontSize: 16 }}>当电阻 R=10Ω，电压 U=5V 时，电流 I = ?</p>
-        </div>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {['0.5A', '2A', '5A', '50A'].map(option => (
-            <div key={option} style={{
-              background: '#f5f7fa',
-              padding: '12px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              border: '1px solid #e8e8e8',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#E9F0F7';
-              e.currentTarget.style.borderColor = '#95AEC7';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#f5f7fa';
-              e.currentTarget.style.borderColor = '#e8e8e8';
-            }}>
-              {option}
-            </div>
-          ))}
-        </div>
-        
-        <p style={{ marginTop: 20, color: '#6B8EAE', fontSize: 13 }}>
-          点击选项选择答案 · 共 5 题
-        </p>
-      </div>
-    </div>
-  );
-
   // 根据是否有内容显示预览或空状态
   const getPreviewContent = () => {
     if (!hasContent) return emptyPlaceholder;
-    
+
+    // 使用原始文件 URL 进行预览（DocViewer 直接支持 PPT 和 Word）
     const currentUrl = activeTab === 'ppt' ? pptUrl : activeTab === 'word' ? wordUrl : gameUrl;
-    
+
     if (!currentUrl) {
       return (
         <div style={{
@@ -277,38 +542,197 @@ function PreviewPanel() {
         </div>
       );
     }
+
+    // 构建完整的预览 URL
+    let previewUrl = currentUrl;
+    console.log('原始 URL:', previewUrl);
     
+    // 处理不同格式的 URL
+    if (!previewUrl.startsWith('http')) {
+      // 清理 URL 中的多余部分
+      previewUrl = previewUrl.replace(/\.\//g, '');
+      previewUrl = previewUrl.replace(/\/static\/static/g, '/static');
+      
+      // 确保以 /static 开头
+      if (!previewUrl.startsWith('/static')) {
+        // 检查是否包含 exports 目录
+        if (previewUrl.includes('exports')) {
+          // 如果包含 exports，提取 exports 及其后面的部分
+          const exportsIndex = previewUrl.indexOf('exports');
+          if (exportsIndex !== -1) {
+            previewUrl = '/static/' + previewUrl.substring(exportsIndex);
+          } else {
+            // 否则使用默认路径
+            previewUrl = `/static/exports/${previewUrl}`;
+          }
+        } else {
+          // 直接使用 /static/exports/ 路径
+          previewUrl = `/static/exports/${previewUrl}`;
+        }
+      }
+      
+      // 使用完整的 URL，指向后端服务器
+      // 假设后端服务器运行在 http://localhost:8000
+      previewUrl = `http://localhost:8000${previewUrl}`;
+      console.log('预览 URL:', previewUrl);
+    }
+    
+    console.log('处理后的预览 URL:', previewUrl);
+
     // 根据类型显示不同的预览内容
+
     switch (activeTab) {
-      case 'ppt':
+     case 'ppt':
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
+      <div style={{
+        flex: 1,
+        background: '#f5f7fa',
+        borderRadius: 12,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #6B8EAE 0%, #95AEC7 100%)',
+          padding: '12px 16px',
+          color: '#fff',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span style={{ fontWeight: 500 }}>PPT 预览</span>
+          <span style={{ fontSize: 12, opacity: 0.9 }}>
+            {pptLoading ? '加载中...' : pptSlides.length > 0 ? `共 ${pptSlides.length} 页` : 'PPT 文件'}
+          </span>
+        </div>
+        <div style={{
+          flex: 1,
+          padding: '20px',
+          background: '#fff',
+          overflowX: 'auto',
+          overflowY: 'auto',
+          maxHeight: '400px',
+          minHeight: '300px',
+          position: 'relative'
+        }}>
+          {pptLoading ? (
+            <div style={{ 
+              padding: '20px', 
+              textAlign: 'center', 
+              color: '#999',
+              maxWidth: '100%',
+              width: '100%',
+              margin: '0 auto'
+            }}>正在加载PPT文档...</div>
+          ) : pptError ? (
+            <div style={{ 
+              padding: '20px', 
+              textAlign: 'center', 
+              color: '#f5222d',
+              maxWidth: '100%',
+              width: '100%',
+              margin: '0 auto'
+            }}>
+              <FileTextOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+              <p>{pptError}</p>
+            </div>
+          ) : pptSlides.length > 0 ? (
+            <div style={{ padding: '0 20px 20px 20px', minWidth: 1200 }}>
+              {pptSlides.map((slide, index) => (
+                <div key={index} style={{
+                  width: 1200,
+                  height: 675,
+                  background: '#fff',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  borderRadius: 8,
+                  overflow: 'auto',
+                  marginBottom: 20
+                }}>
+                  <PPTXPreviewer slide={slide} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ 
+              padding: '20px', 
+              textAlign: 'center', 
+              color: '#999',
+              maxWidth: '100%',
+              width: '100%',
+              margin: '0 auto'
+            }}>
+              <FileTextOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+              <p>暂无PPT内容</p>
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{
+        background: '#f5f7fa',
+        borderRadius: 8,
+        padding: 12,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        color: '#6B8EAE'
+      }}>
+        <CheckOutlined />
+        <span>PPT 已生成 · 点击下载查看完整内容</span>
+      </div>
+    </div>
+  );
+      case 'word':
         return (
-          <div style={{ 
-            display: 'flex', 
+          <div style={{
+            display: 'flex',
             flexDirection: 'column',
+            height: '100%',
             gap: 12
           }}>
-            <div style={{ 
-              background: 'linear-gradient(135deg, #6B8EAE 0%, #95AEC7 100%)',
+            <div style={{
+              flex: 1,
+              background: '#f5f7fa',
               borderRadius: 12,
-              padding: '20px 16px',
-              color: '#fff'
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
             }}>
-              <h3 style={{ color: '#fff', marginBottom: 8 }}>PPT 课件</h3>
-              <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>已生成，点击导出可下载</p>
+              <div style={{
+                background: 'linear-gradient(135deg, #6B8EAE 0%, #95AEC7 100%)',
+                padding: '12px 16px',
+                color: '#fff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontWeight: 500 }}>Word 教案预览</span>
+                <span style={{ fontSize: 12, opacity: 0.9 }}>Word 文档</span>
+              </div>
+              <div style={{
+                flex: 1,
+                padding: '20px',
+                background: '#fff',
+                overflow: 'auto',
+                maxHeight: '400px',
+                minHeight: '300px',
+                position: 'relative'
+              }} ref={wordPreviewRef}>
+                <div style={{ 
+                  padding: '20px', 
+                  textAlign: 'center', 
+                  color: '#999',
+                  maxWidth: '100%',
+                  width: '100%',
+                  margin: '0 auto'
+                }}>正在加载Word文档...</div>
+              </div>
             </div>
-            <div style={{ 
-              background: '#f5f7fa', 
-              borderRadius: 8, 
-              padding: 16,
-              borderLeft: '4px solid #6B8EAE'
-            }}>
-              <p style={{ fontWeight: 500, marginBottom: 8 }}>📌 生成信息</p>
-              <p style={{ color: '#666', fontSize: 13 }}>文件已生成，您可以通过导出功能下载完整 PPT 文件。</p>
-            </div>
-            <div style={{ 
-              background: '#f5f7fa', 
-              borderRadius: 8, 
-              padding: 16,
+            <div style={{
+              background: '#f5f7fa',
+              borderRadius: 8,
+              padding: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -316,62 +740,69 @@ function PreviewPanel() {
               color: '#6B8EAE'
             }}>
               <CheckOutlined />
-              <span>生成成功 · 点击导出可下载</span>
-            </div>
-          </div>
-        );
-      case 'word':
-        return (
-          <div style={{ 
-            background: '#fff',
-            padding: 16,
-            borderRadius: 12
-          }}>
-            <h3 style={{ marginBottom: 16, color: '#4A637A' }}>Word 教案</h3>
-            
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>🎯 生成状态</p>
-              <div style={{ background: '#f5f7fa', padding: 12, borderRadius: 8 }}>
-                <p style={{ fontSize: 13, color: '#666' }}>教案文件已生成完成</p>
-                <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>包含完整的教学目标、教学过程和课后作业</p>
-              </div>
-            </div>
-            
-            <div>
-              <p style={{ fontWeight: 500, color: '#6B8EAE', marginBottom: 8 }}>📝 操作提示</p>
-              <p style={{ color: '#666', fontSize: 13 }}>点击导出按钮下载完整的 Word 教案文件</p>
+              <span>教案已生成 · 点击下载查看完整内容</span>
             </div>
           </div>
         );
       case 'game':
         return (
-          <div style={{ 
-            background: 'linear-gradient(135deg, #E9F0F7 0%, #f5f7fa 100%)',
-            borderRadius: 16,
-            padding: 20,
-            textAlign: 'center'
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            gap: 12
           }}>
-            <div style={{ 
-              background: '#fff', 
-              borderRadius: 12, 
-              padding: 20,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+            <div style={{
+              flex: 1,
+              background: '#f5f7fa',
+              borderRadius: 12,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
             }}>
-              <h3 style={{ color: '#4A637A', marginBottom: 20 }}>🎮 互动游戏</h3>
-              
-              <div style={{ 
-                background: '#6B8EAE', 
-                color: '#fff', 
+              <div style={{
+                background: 'linear-gradient(135deg, #6B8EAE 0%, #95AEC7 100%)',
                 padding: '12px 16px',
-                borderRadius: 12,
-                marginBottom: 20
+                color: '#fff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
               }}>
-                <p style={{ fontSize: 16 }}>游戏已生成完成</p>
+                <span style={{ fontWeight: 500 }}>🎮 互动游戏预览</span>
+                <span style={{ fontSize: 12, opacity: 0.9 }}>HTML 游戏</span>
               </div>
-              
-              <p style={{ marginTop: 20, color: '#6B8EAE', fontSize: 13 }}>
-                点击导出按钮下载完整的游戏文件
-              </p>
+              <div style={{
+                flex: 1,
+                padding: 16,
+                background: '#fff',
+                overflow: 'hidden'
+              }}>
+                <iframe
+                  src={previewUrl}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    minHeight: 400,
+                    border: 'none',
+                    borderRadius: 8,
+                    background: '#fff'
+                  }}
+                  title="Game Preview"
+                />
+              </div>
+            </div>
+            <div style={{
+              background: '#f5f7fa',
+              borderRadius: 8,
+              padding: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              color: '#6B8EAE'
+            }}>
+              <CheckOutlined />
+              <span>游戏已生成 · 导出可下载完整文件</span>
             </div>
           </div>
         );
@@ -412,17 +843,19 @@ function PreviewPanel() {
   ];
 
  return (
-  <div style={{ 
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px 20px 20px 20px',
-    overflow: 'hidden',
-    boxSizing: 'border-box' 
-  }}>
+    <>
+      <PreviewPanelStyle />
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '8px 20px 20px 20px',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+        height: '100%'
+      }}>
       {/* 预览区域 - 白色卡片（包含 Tab 和操作按钮） */}
 <div style={{
-  minHeight: 0,
+  minHeight: 600,
   flex: 1,
   background: '#ffffff',
   borderRadius: 18,
@@ -727,6 +1160,7 @@ onMouseLeave={(e) => {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

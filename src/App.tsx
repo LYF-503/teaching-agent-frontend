@@ -96,7 +96,7 @@ const customKbRequest: UploadProps['customRequest'] = async ({ file, onSuccess, 
 
   // 计算宽度
   const leftWidth = leftSidebarCollapsed ? 60 : 260;
-  const rightWidth = rightPanelCollapsed ? 60 : 500;
+  const rightWidth = rightPanelCollapsed ? 60 : 700;
 
   return (
     <div style={{ 
@@ -358,13 +358,6 @@ const customKbRequest: UploadProps['customRequest'] = async ({ file, onSuccess, 
               size="small"
               style={{ color: '#6B8EAE' }}
               title="展开预览面板"
-            />
-            <Button
-              type="text"
-              icon={<EyeOutlined />}
-              size="small"
-              style={{ color: '#6B8EAE' }}
-              title="课件预览"
             />
           </div>
         ) : (
